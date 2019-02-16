@@ -5,7 +5,7 @@
 # 
 # Author:   Nick Christman, nc2677
 # Date:     2019/02/19
-# Program:  ip-count.py
+# Program:  hw1_part1.py
 # SDK(s):   Apache Beam
 
 '''This workflow parses network log files by IP address and computes the total 
@@ -49,33 +49,31 @@ def run():
     def sum_bytes(ip_cbyte):
       (ip, cbyte) = ip_cbyte
       byte_sum = sum(cbyte)
-      return [(ip, byte_sum)]
+      return [ip, byte_sum]
 
-    # Create PCollection
+    # Define pipline for reading access logs and getting IP and summed size
     IpSizePcoll = p | 'ReadAccessLog' >> (beam.io.ReadFromText(log_in)) \
-                    | 'GetIpSize' >> beam.FlatMap(lambda x: [(bytes(x.split(" ")[0]), \
-                                                            int(x.split(" ")[-1]))]) \
+                    | 'GetIpSize' >> beam.FlatMap(
+                                          lambda x: [(bytes(x.split(" ")[0]), \
+                                                      int(x.split(" ")[-1]))]) \
                     | 'Grouped' >> beam.GroupByKey() \
-                    | 'SumSize' >> beam.Map(sum_bytes)
+                    | 'SumSize' >> beam.Map(sum_bytes) \
+                    | 'FormatOutput' >> beam.ParDo(FormatOutputFn())
+# TODO: Aggregate address as query2.lycos.*.*
 
+    # Write output PCollection to output file
     IpSizePcoll | beam.io.WriteToText(res_out)
     
+    # Execute the Pipline
     result = p.run()
     result.wait_until_finish()
 
-class GetIpFn(beam.DoFn):
-  def process(self, element):
-    # split strig by whitespaces
-    elements = element.split(" ")
-    ip_size = [elements[0], elements[-1]]
-    print(ip_size)
-    return ip_size #20190213: added [] so it returns properly!
-
-class GetSizeFn(beam.DoFn):
-  def process(self, element):
-    elements = element.split(" ")
-    size = elements[-1]
-    return [size]
+class FormatOutputFn(beam.DoFn):
+  def process(self,rawOutput):
+    # rawData is a list of strings/bytes
+    print(rawOutput[0])
+    formattedOutput = "%s : %s " % (rawOutput[0],rawOutput[1])
+    return [formattedOutput]
 
 if __name__ == '__main__':
   run()

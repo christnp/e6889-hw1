@@ -55,7 +55,7 @@ def run():
     IpSizePcoll = p | 'ReadAccessLog' >> (beam.io.ReadFromText(log_in)) \
                     | 'GetIpSize' >> beam.FlatMap(lambda x: [(bytes(x.split(" ")[0]), \
                                                             int(x.split(" ")[-1]))]) \
-                    | 'Grouped' >> beam.GroupByKey() \
+                    | 'GroupIPs' >> beam.GroupByKey() \
                     | 'SumSize' >> beam.Map(sum_bytes)
 
     IpSizePcoll | beam.io.WriteToText(res_out)
