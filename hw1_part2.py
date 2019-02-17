@@ -9,8 +9,9 @@
 # Program:  hw1_part2.py
 # SDK(s):   Apache Beam
 
-'''This file extends hw1_part1.py by adding sort/filter functionality. s the top-K IPs that were served 
-the most number of bytes 
+'''This file extends hw1_part1.py by adding sort/filter functionality. The top-K
+IPs that were served are saved to an output file. The default output is a sorted
+list of IP:Size tuples. 
 
  References:
  1. https://beam.apache.org/documentation/programming-guide/
