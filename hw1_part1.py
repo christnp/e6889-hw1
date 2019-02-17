@@ -52,11 +52,10 @@ def run():
       return [ip, byte_sum]
 
     # Define pipline for reading access logs and getting IP and summed size
-    IpSizePcoll = p | 'ReadAccessLog' >> (beam.io.ReadFromText(log_in)) \
-                    | 'GetIpSize' >> beam.ParDo(ParseLogFn()) \
-                    | 'Grouped' >> beam.GroupByKey() \
-                    | 'SumSize' >> beam.Map(sum_bytes) \
-                    | 'FormatOutput' >> beam.ParDo(FormatOutputFn())
+    IpSizePcoll = (p | 'ReadAccessLog' >> (beam.io.ReadFromText(log_in)) 
+                    | 'GetIpSize' >> beam.ParDo(ParseLogFn()) 
+                    | 'GroupIps' >> beam.CombinePerKey(sum) 
+                    | 'FormatOutput' >> beam.ParDo(FormatOutputFn()))
 # TODO: Aggregate address as query2.lycos.*.*
 
     # Write to output file
