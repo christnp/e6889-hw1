@@ -9,8 +9,7 @@
 # Program:  hw1_part2.py
 # SDK(s):   Apache Beam
 
-'''This workflow parses network log files by IP address and computes the total 
-number of bytes served by each IP. It returns the top-K IPs that were served 
+'''This file extends hw1_part1.py by adding sort/filter functionality. s the top-K IPs that were served 
 the most number of bytes 
 
  References:
@@ -37,8 +36,8 @@ def run():
                         required=True)
     parser.add_argument('--output', '-o',
                         dest='output',
-                        help='Path of output/results file.',
-                        required=True)
+                        default='output.txt',
+                        help='Path of output/results file.')
     parser.add_argument('--K','-K',
                         dest='top_k',
                         type=int,
@@ -51,57 +50,47 @@ def run():
     res_out = args.output
     top_k = args.top_k
 
+    # Start Beam Pipeline
     p = beam.Pipeline(options=PipelineOptions())
     # No runner specified -> DirectRunner used (local runner)
 
-    # Sum the content size (bytes) for each IP occurence.
-    def sum_bytes(ip_cbyte):
-      (ip, cbyte) = ip_cbyte
-      byte_sum = sum(cbyte)
-      return [ip, byte_sum]
-    
-    def sort_bytes(ip_cbyte):
-      logging.info('Before : [%s]', ip_cbyte)
-      logging.info('After : [%s]', sorted(ip_cbyte))  
-      return ip_cbyte
-
     # Define pipline for reading access logs, grouping IPs, summing the size,
     # and returning only top-K
-    IpSizePcoll = (p | 'ReadAccessLog' >> (beam.io.ReadFromText(log_in)) 
+    ip_size_pcoll = (p | 'ReadAccessLog' >> beam.io.ReadFromText(log_in)
                     | 'GetIpSize' >> beam.ParDo(ParseLogFn()) 
-                    | 'Grouped' >> beam.GroupByKey() 
-                    | 'SumSize' >> beam.Map(sum_bytes))
+                    | 'GroupIps' >> beam.CombinePerKey(sum)) 
 
-    SortPcoll = IpSizePcoll | 'Sort' >> beam.CombineGlobally(ReturnTopFn())
-#                    | 'TopK' >> beam.ParDo(ReturnTopFn())#,top_k) 
-#                    | 'FormatOutput' >> beam.ParDo(FormatOutputFn())
+    # Part 2: extended Pipeline from Part 1; ip_size_pcoll PCollection is 
+    #         combined as a single list of tuples (ip,size) and then sorted 
+    #         serially. The final list is then formatted serially
+    # TODO: figure out a more effecient method.
+    def sort_bytes(ip_cbyte,k=0):
+      # Ref: https://stackoverflow.com/questions/3121979/how-to-sort-list-tuple-of-lists-tuples
+      if k == 0:
+        top_k = sorted(ip_cbyte, key=lambda tup: tup[1], reverse=True)
+      else:
+        top_k = sorted(ip_cbyte, key=lambda tup: tup[1], reverse=True)[:k]  
+      return top_k
+
+    top_k_pcoll = (ip_size_pcoll | 'CombineAsList' >> beam.CombineGlobally(
+                                              beam.combiners.ToListCombineFn())
+                    | 'SortTopK' >> beam.Map(sort_bytes,top_k)
+                    | 'FormatOutput' >> beam.ParDo(FormatOutputFn()))
 
     # Write to output file
-    SortPcoll | beam.io.WriteToText(res_out)
+    top_k_pcoll | beam.io.WriteToText(res_out)
     
     # Execute the Pipline
     result = p.run()
     result.wait_until_finish()
 
-class ReturnTopFn(beam.CombineFn):
-  def create_accumulator(self):    
-    return (None,0)
-
-  def add_input(self,ip_size,input):
-    (ip,size) = ip_size
-    return ip,size + input
-
-  def merge_accumulators(self,accumulators):
-    ip_size = zip(*accumulators)
-    
-
-
-
 # Transform: parse log, returning string IP and integer size
-# - Expected example format:
-#   |    IP/Server   | X |    Date/Time        | TZ?  | M  | Location | M |Size    
-#   |       0        |1|2|        3            |  4   | 5  |    6     | 7 |8(-1)   
-# - duckling.omsi.edu - - [04/Jul/1995:18:38:41 -0400] "GET /HTTP/1.0" 200 7074
+# Expected example format:
+# |    IP/Server   | X |    Date/Time        | TZ?  | M  | Location | M |Size    
+# |       0        |1|2|        3            |  4   | 5  |    6     | 7 |8(-1)   
+# -----------------------------------------------------------------------------
+# duckling.omsi.edu - - [04/Jul/1995:18:38:41 -0400] "GET /HTTP/1.0" 200 7074
+# -----------------------------------------------------------------------------
 class ParseLogFn(beam.DoFn):
   def process(self,element):
     element_uni = element.encode('utf-8')
@@ -126,11 +115,13 @@ class ParseLogFn(beam.DoFn):
 
 # Transform: format the output as 'IP : size'
 class FormatOutputFn(beam.DoFn):
-  def process(self,rawOutput):
+  def process(self,rawOutputs):
     # rawData is a list of strings/bytes
-    #print(rawOutput[0])
-    formattedOutput = "%s : %s " % (rawOutput[0],rawOutput[1])
-    return [formattedOutput]
+    # Part 2 Changes: have to iterate through list
+    formattedOutput = []
+    for rawOutput in rawOutputs:
+      formattedOutput.append("%s : %s " % (rawOutput[0],rawOutput[1]))
+    return formattedOutput
 
 if __name__ == '__main__':
   logging.getLogger().setLevel(logging.INFO)

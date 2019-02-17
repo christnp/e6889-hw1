@@ -35,25 +35,26 @@ def run():
                         required=True)
     parser.add_argument('--output', '-o',
                         dest='output',
-                        help='Path of output/results file.',
-                        required=True)
+                        default='output.txt',
+                        help='Path of output/results file.')
 
     args = parser.parse_args()
     log_in = args.input
     res_out = args.output
 
+    # Start Beam Pipeline
     p = beam.Pipeline(options=PipelineOptions())
     # No runner specified -> DirectRunner used (local runner)
 
-    # Define pipline for reading access logs and getting IP and summed size
-    IpSizePcoll = (p | 'ReadAccessLog' >> (beam.io.ReadFromText(log_in)) 
+    # Define pipline for reading access logs, grouping IPs, & summing the size.
+    ip_size_pcoll = (p | 'ReadAccessLog' >> beam.io.ReadFromText(log_in)
                     | 'GetIpSize' >> beam.ParDo(ParseLogFn()) 
                     | 'GroupIps' >> beam.CombinePerKey(sum) 
                     | 'FormatOutput' >> beam.ParDo(FormatOutputFn()))
 # TODO: Aggregate address as query2.lycos.*.*
 
     # Write to output file
-    IpSizePcoll | beam.io.WriteToText(res_out)
+    ip_size_pcoll | beam.io.WriteToText(res_out)
     
     # Execute the Pipline
     result = p.run()
