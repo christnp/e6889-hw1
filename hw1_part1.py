@@ -45,12 +45,6 @@ def run():
     p = beam.Pipeline(options=PipelineOptions())
     # No runner specified -> DirectRunner used (local runner)
 
-    # Sum the content size (bytes) for each IP occurence.
-    def sum_bytes(ip_cbyte):
-      (ip, cbyte) = ip_cbyte
-      byte_sum = sum(cbyte)
-      return [ip, byte_sum]
-
     # Define pipline for reading access logs and getting IP and summed size
     IpSizePcoll = (p | 'ReadAccessLog' >> (beam.io.ReadFromText(log_in)) 
                     | 'GetIpSize' >> beam.ParDo(ParseLogFn()) 
@@ -64,9 +58,6 @@ def run():
     # Execute the Pipline
     result = p.run()
     result.wait_until_finish()
-
-    # logging
-
 
 # Transform: parse log, returning string IP and integer size
 # - Expected example format:
@@ -99,7 +90,6 @@ class ParseLogFn(beam.DoFn):
 class FormatOutputFn(beam.DoFn):
   def process(self,rawOutput):
     # rawData is a list of strings/bytes
-    #print(rawOutput[0])
     formattedOutput = "%s : %s " % (rawOutput[0],rawOutput[1])
     return [formattedOutput]
 
