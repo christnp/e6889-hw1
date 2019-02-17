@@ -29,7 +29,7 @@ import os
 
 def run():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input', "-i"
+    parser.add_argument('--input', "-i",
                         dest='input',
                         help='Path of input file to process.',
                         required=True)
