@@ -1,3 +1,0 @@
-This is a test
-for the word count example
-test test test this

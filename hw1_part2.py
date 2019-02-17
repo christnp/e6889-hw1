@@ -56,24 +56,23 @@ def run():
 
     # Sum the content size (bytes) for each IP occurence.
     def sum_bytes(ip_cbyte):
-      logging.info('sum_bte : [%s]', ip_cbyte)
-      #(ip, cbyte) = ip_cbyte
-      #byte_sum = sum(cbyte)
-      return ip_cbyte
+      (ip, cbyte) = ip_cbyte
+      byte_sum = sum(cbyte)
+      return [ip, byte_sum]
     
     def sort_bytes(ip_cbyte):
       logging.info('Before : [%s]', ip_cbyte)
       logging.info('After : [%s]', sorted(ip_cbyte))  
-      return [ip_cbyte]
+      return ip_cbyte
 
     # Define pipline for reading access logs, grouping IPs, summing the size,
     # and returning only top-K
-    IpSizePcoll = (p | 'ReadAccessLog' >> (beam.io.ReadFromText(log_in)) \
-                    | 'GetIpSize' >> beam.ParDo(ParseLogFn()) \
-                    | 'Grouped' >> beam.GroupByKey() \
+    IpSizePcoll = (p | 'ReadAccessLog' >> (beam.io.ReadFromText(log_in)) 
+                    | 'GetIpSize' >> beam.ParDo(ParseLogFn()) 
+                    | 'Grouped' >> beam.GroupByKey() 
                     | 'SumSize' >> beam.Map(sum_bytes))
 
-    SortPcoll = IpSizePcoll | 'Sort' >> beam.CombineGlobally(sort_bytes)
+    SortPcoll = IpSizePcoll | 'Sort' >> beam.CombineGlobally(ReturnTopFn())
 #                    | 'TopK' >> beam.ParDo(ReturnTopFn())#,top_k) 
 #                    | 'FormatOutput' >> beam.ParDo(FormatOutputFn())
 
@@ -84,17 +83,17 @@ def run():
     result = p.run()
     result.wait_until_finish()
 
-class ReturnTopFn(beam.DoFn):
-  def process(self,grouped_ips):#,K):
-    # group should be a tuple, sort it    
-    tmp = sorted(grouped_ips,reverse=True)
-    return tmp
-    # if K == 0:
-    #   logging.info('Sorted : [%s]', grouped_ips)
-    #   return grouped_ips
-    # else:
-    #   logging.info('Sorted : [%s]', tmp[0:K])
-    #   return tmp[0:K]
+class ReturnTopFn(beam.CombineFn):
+  def create_accumulator(self):    
+    return (None,0)
+
+  def add_input(self,ip_size,input):
+    (ip,size) = ip_size
+    return ip,size + input
+
+  def merge_accumulators(self,accumulators):
+    ip_size = zip(*accumulators)
+    
 
 
 
