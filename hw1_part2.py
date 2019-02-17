@@ -6,11 +6,12 @@
 # 
 # Author:   Nick Christman, nc2677
 # Date:     2019/02/19
-# Program:  hw1_part1.py
+# Program:  hw1_part2.py
 # SDK(s):   Apache Beam
 
 '''This workflow parses network log files by IP address and computes the total 
-number of bytes served by each IP. 
+number of bytes served by each IP. It returns the top-K IPs that were served 
+the most number of bytes 
 
  References:
  1. https://beam.apache.org/documentation/programming-guide/
@@ -20,6 +21,7 @@ number of bytes served by each IP.
 '''
 import argparse
 import logging
+import sys
 
 import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions
@@ -29,44 +31,71 @@ import os
 
 def run():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input', "-i"
+    parser.add_argument('--input', '-i',
                         dest='input',
                         help='Path of input file to process.',
                         required=True)
-    parser.add_argument('--output',
-                        dest='output', "-o"
+    parser.add_argument('--output', '-o',
+                        dest='output',
                         help='Path of output/results file.',
                         required=True)
+    parser.add_argument('--K','-K',
+                        dest='top_k',
+                        type=int,
+                        default=0,
+                        help='Switch to return only top K IPs that were ' \
+                              + 'served. Default: 0 (all)')
 
     args = parser.parse_args()
     log_in = args.input
     res_out = args.output
+    top_k = args.top_k
 
     p = beam.Pipeline(options=PipelineOptions())
     # No runner specified -> DirectRunner used (local runner)
 
     # Sum the content size (bytes) for each IP occurence.
     def sum_bytes(ip_cbyte):
-      (ip, cbyte) = ip_cbyte
-      byte_sum = sum(cbyte)
-      return [ip, byte_sum]
+      logging.info('sum_bte : [%s]', ip_cbyte)
+      #(ip, cbyte) = ip_cbyte
+      #byte_sum = sum(cbyte)
+      return ip_cbyte
+    
+    def sort_bytes(ip_cbyte):
+      logging.info('Before : [%s]', ip_cbyte)
+      logging.info('After : [%s]', sorted(ip_cbyte))  
+      return [ip_cbyte]
 
-    # Define pipline for reading access logs and getting IP and summed size
-    IpSizePcoll = p | 'ReadAccessLog' >> (beam.io.ReadFromText(log_in)) \
+    # Define pipline for reading access logs, grouping IPs, summing the size,
+    # and returning only top-K
+    IpSizePcoll = (p | 'ReadAccessLog' >> (beam.io.ReadFromText(log_in)) \
                     | 'GetIpSize' >> beam.ParDo(ParseLogFn()) \
                     | 'Grouped' >> beam.GroupByKey() \
-                    | 'SumSize' >> beam.Map(sum_bytes) \
-                    | 'FormatOutput' >> beam.ParDo(FormatOutputFn())
-# TODO: Aggregate address as query2.lycos.*.*
+                    | 'SumSize' >> beam.Map(sum_bytes))
+
+    SortPcoll = IpSizePcoll | 'Sort' >> beam.CombineGlobally(sort_bytes)
+#                    | 'TopK' >> beam.ParDo(ReturnTopFn())#,top_k) 
+#                    | 'FormatOutput' >> beam.ParDo(FormatOutputFn())
 
     # Write to output file
-    IpSizePcoll | beam.io.WriteToText(res_out)
+    SortPcoll | beam.io.WriteToText(res_out)
     
     # Execute the Pipline
     result = p.run()
     result.wait_until_finish()
 
-    # logging
+class ReturnTopFn(beam.DoFn):
+  def process(self,grouped_ips):#,K):
+    # group should be a tuple, sort it    
+    tmp = sorted(grouped_ips,reverse=True)
+    return tmp
+    # if K == 0:
+    #   logging.info('Sorted : [%s]', grouped_ips)
+    #   return grouped_ips
+    # else:
+    #   logging.info('Sorted : [%s]', tmp[0:K])
+    #   return tmp[0:K]
+
 
 
 # Transform: parse log, returning string IP and integer size
