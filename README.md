@@ -1,17 +1,18 @@
-# e6889-hw1
-ELEN-E6889 Homework 1
+# ELEN-E6889 Homework 1
+## By:  Nick Christman
+## Due: 02.19.2018
 
-*Assumptions:
+## Assumptions:
 1. Log file is saved in proper, UTF-8 encoding
 2. Log file format is consistent (see source code comment for ParseLogFn())
 
-*Discussion:
-**Part 1 - 
-**Part 2 - 
-**Part 3 -
-**Part 4 - 
+## Discussion:
+### Part 1 - 
+### Part 2 - 
+### Part 3 -
+### Part 4 - 
 
-*Notes:
+## Notes:
 I did not mask web links, except when specifially told to (i.e., Part 4)
 
 Make sure that you follow the instructions of deliverability. Please put the codes for each part into a separate folder and name them "hw1_part1", "hw1_part2", "hw1_part3" and "hw1_4".  Your final submission should include four aforementioned folders, a report and the data file you use.
@@ -45,12 +46,12 @@ Alternative return [{'IP': rawOutput[0],
 " 4396 bytes are served to 111.111.111.* in the hour period from 00:00:00:00 to 00:00:59:59"
 
 
-*Data:
+## Data:
 epa-html.txt from http://ita.ee.lbl.gov/
 -- Data is not included in push (too large)
 
 
- *References:
+ ##References:
  1. https://beam.apache.org/documentation/programming-guide/
  2. https://beam.apache.org/documentation/sdks/python/
  3. https://beam.apache.org/get-started/wordcount-example/
