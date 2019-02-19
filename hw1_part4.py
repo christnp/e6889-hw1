@@ -9,8 +9,7 @@
 # Program:  hw1_part4.py
 # SDK(s):   Apache Beam
 
-'''This file extends adding sort/filter functionality. s the top-K IPs that were served 
-the most number of bytes 
+'''This file extends hw1_part3.py by adding windowing functionality.
 
  References:
  1. https://beam.apache.org/documentation/programming-guide/
@@ -23,6 +22,8 @@ import logging
 import sys
 import os
 import re
+import ipaddress
+import socket
 from datetime import datetime
 import dateutil.parser as parser
 
@@ -38,34 +39,42 @@ def run():
     parser = argparse.ArgumentParser()
     parser.add_argument('--input', '-i',
                         dest='input',
-                        help='Path of input file to process.',
+                        help='Path of input file to process.If only name is ' \
+                          'provided then local directory selected.',
                         required=True)
     parser.add_argument('--output', '-o',
                         dest='output',
                         default='output.txt',
-                        help='Path of output/results file.')
+                        help='Path of output/results file. If only name is ' \
+                          'provided then local directory selected.')
     parser.add_argument('--K','-K',
                         dest='top_k',
                         type=int,
                         default=0,
                         help='Switch to return only top K IPs that were ' \
-                              + 'served. Default: 0 (all)')
+                              + 'served, sorted from most to least served (in ' \
+                              + 'bytes) Default: 0 (return all, not sorted)')
+    parser.add_argument('--prefix','-p',
+                        dest='prefix',
+                        default="255.255.255.255",
+                        help='Specify subnet mask (prefix). Default: 255.255.' \
+                          '255.255 (no prefix). Any numeric value not-equal ' \
+                            'to \"255\" implies mask/prefix will be applied.')
 
     args = parser.parse_args()
     log_in = args.input
     res_out = args.output
-    # create new filenames    
-    out_path = os.path.split(args.output)
-    tmp = out_path[1].split(".")
-
-    print(tmp)
-    tmp_text = tmp[0]+'-text.'+tmp[1]
-    tmp_json = tmp[0]+'-json.'+tmp[1]
-    res_out_text = os.path.join(out_path[0],tmp_text)
-    res_out_json = os.path.join(out_path[0],tmp_json)
-    print(res_out_text)
-    print(res_out_json)
     top_k = args.top_k
+    prefix = args.prefix
+
+    # function from Part 2 to sort by top-K served IPs (by prefix now)
+    def sort_bytes(ip_cbyte,k=0):
+      # Ref: https://stackoverflow.com/questions/3121979/how-to-sort-list-tuple-of-lists-tuples
+      if k == 0:
+        top_k = ip_cbyte # not sorted
+      else:
+        top_k = sorted(ip_cbyte, key=lambda tup: tup[1], reverse=True)[:k]  
+      return top_k
 
     # Start Beam Pipeline
     p = beam.Pipeline(options=PipelineOptions())
@@ -75,13 +84,15 @@ def run():
     # and returning only top-K
     ip_size_pcoll = (p | 'ReadAccessLog' >> beam.io.ReadFromText(log_in)
                     | 'GetIpSize' >> beam.ParDo(ParseLogFn())
-                    | 'Timestamp' >>  beam.ParDo(AddTimestampFn())
-                    | 'Window' >> beam.WindowInto(window.FixedWindows(60*60,0))
-                    | 'GroupIps' >> beam.CombinePerKey(sum))
+                    | 'PrefixMask' >>  beam.ParDo(ApplyPrefixMaskFn(),prefix)
+                    | 'GroupIps' >> beam.CombinePerKey(sum)
+                    | 'CombineAsList' >> beam.CombineGlobally(
+                                              beam.combiners.ToListCombineFn())
+                    | 'SortTopK' >> beam.Map(sort_bytes,top_k)
+                    | 'FormatOutput' >> beam.ParDo(FormatOutputFn()))
 
     # Write to output file as text     
-    output_text = ip_size_pcoll | 'FormatOutputText' >> beam.ParDo(FormatOutputFn(format='text'))
-    output_text | 'OutputText' >> beam.io.WriteToText(res_out_text)
+    ip_size_pcoll | beam.io.WriteToText(res_out)
 
     # Execute the Pipline
     result = p.run()
@@ -141,8 +152,11 @@ class ParseLogFn(beam.DoFn):
 
     # Part 3: extended to parse and convert time for unix time-stamp
     # parse date/time; strip out brackets (assumes [date/time] format)
-    dt_str_raw = elements[1].translate(None, '[]')
-    dt = self.__dt_check(dt_str_raw)
+    try:
+      dt_str_raw = elements[1].translate(None, '[]')
+      dt = self.__dt_check(dt_str_raw)
+    except:
+      dt = datetime.utcfromtimestamp(0)
     # compute the timestamp
     unix_ts = (dt - datetime.utcfromtimestamp(0)).total_seconds()
 
@@ -151,25 +165,54 @@ class ParseLogFn(beam.DoFn):
 
     return [(ip,size,unix_ts)]
 
-# Transform: adds timestamp to element
+# Transform: applies mask/prefix and adds timestamp to element
 # Ref: Beam Programming Guide
-class AddTimestampFn(beam.DoFn):
-  def process(self, element):
-    unix_ts = element[2]
-    new_element = (element[0],element[1])
-    yield beam.window.TimestampedValue(new_element, int(unix_ts))
+class ApplyPrefixMaskFn(beam.DoFn):
+  def process(self,element,prefix):
+    logging.debug('ApplyPrefixMaskFn() prefix: %s', prefix)
+    logging.debug('ApplyPrefixMaskFn() IP Addr: %s', str(element[0]))
+
+    # split inputs for comparison
+    prefix_split = prefix.split(".")
+    element_split = element[0].split(".")
+    
+    # use socket module to check if it is an IP address vs. weblink
+    try: 
+      socket.inet_aton(element[0]) #true if IPv4, error if weblink
+
+      # this allows for non-standard masking (e.g., A.*.C.D, A.B.*.D, etc.)
+      if int(prefix_split[3]) != 255:
+        element_split[3] = "*"
+      if int(prefix_split[2]) != 255:
+        element_split[2] = "*"
+      if int(prefix_split[1]) != 255:
+        element_split[1] = "*"
+      if int(prefix_split[0]) != 255:
+        element_split[0] = "*"
+      
+    # must be a weblink? Aggregate by first two words
+    except:
+      element_split[2:] = "*" # example: a.b.x.y.z => a.b.*
+
+    # join the sub-elements to form the filtered IP address
+    tmp_element = '.'.join(element_split)  
+    logging.debug('ApplyPrefixMaskFn() IP Addr Web: %s', tmp_element)
+
+    yield beam.window.TimestampedValue((tmp_element,element[1]),int(element[2]))
+    
 
 # Transform: format the output as 'IP : size'
 class FormatOutputFn(beam.DoFn):
-  def process(self,rawOutput,window=beam.DoFn.WindowParam,format="text"):
-    ts_format = '%H:%M:%S'
-    start = window.start.to_utc_datetime().strftime(ts_format)
-    end = window.end.to_utc_datetime().strftime(ts_format)
-  
-    output = "%d byte(s) were served to %s in the hour period %s to %s" \
-              % (rawOutput[1],rawOutput[0],start,end)
-
-    return [output]
+  def process(self,rawOutputs):
+    # define output format
+    formatApply = "{:7d} byte(s) were served to {:s}"
+    # loop through (presumably) sorted list
+    formattedOutput = []
+    for rawOutput in rawOutputs:
+      formattedOutput.append(formatApply.format(rawOutput[1],rawOutput[0]))
+    
+    logging.debug('FormatOutputFn() %s', formattedOutput)
+    return formattedOutput
 
 if __name__ == '__main__':
   logging.getLogger().setLevel(logging.INFO)

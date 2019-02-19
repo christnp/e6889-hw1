@@ -68,7 +68,7 @@ def run():
     def sort_bytes(ip_cbyte,k=0):
       # Ref: https://stackoverflow.com/questions/3121979/how-to-sort-list-tuple-of-lists-tuples
       if k == 0:
-        top_k = sorted(ip_cbyte, key=lambda tup: tup[1], reverse=True)
+        top_k = ip_cbyte # not sorted
       else:
         top_k = sorted(ip_cbyte, key=lambda tup: tup[1], reverse=True)[:k]  
       return top_k
@@ -87,10 +87,10 @@ def run():
 
 # Transform: parse log, returning string IP and integer size
 # Expected example format:
-# |    IP/Server   | X |    Date/Time        | TZ?  | M  | Location | M |Size    
-# |       0        |1|2|        3            |  4   | 5  |    6     | 7 |8(-1)   
+# |  IP/Server  |  Date/Time |  M |   Location   |HTTP Ver.| M |Size |   
+# |       0     |      1     |  2 |       3      |    4    | 5 |6(-1)|   
 # -----------------------------------------------------------------------------
-# duckling.omsi.edu - - [04/Jul/1995:18:38:41 -0400] "GET /HTTP/1.0" 200 7074
+# 141.243.1.172 [29:23:53:25] "GET /Software.html HTTP/1.0" 200 1497
 # -----------------------------------------------------------------------------
 class ParseLogFn(beam.DoFn):
   def process(self,element):
@@ -117,11 +117,14 @@ class ParseLogFn(beam.DoFn):
 # Transform: format the output as 'IP : size'
 class FormatOutputFn(beam.DoFn):
   def process(self,rawOutputs):
-    # rawData is a list of strings/bytes
-    # Part 2 Changes: have to iterate through list
+    # define output format
+    formatApply = "{:7d} byte(s) were served to {:s}"
+    # loop through (presumably) sorted list
     formattedOutput = []
     for rawOutput in rawOutputs:
-      formattedOutput.append("%s : %s " % (rawOutput[0],rawOutput[1]))
+      formattedOutput.append(formatApply.format(rawOutput[1],rawOutput[0]))
+    
+    logging.debug('FormatOutputFn() %s', formattedOutput)
     return formattedOutput
 
 if __name__ == '__main__':

@@ -37,34 +37,35 @@ def run():
     parser = argparse.ArgumentParser()
     parser.add_argument('--input', '-i',
                         dest='input',
-                        help='Path of input file to process.',
+                        help='Path of input file to process.If only name is ' \
+                          'provided then local directory selected.',
                         required=True)
     parser.add_argument('--output', '-o',
                         dest='output',
                         default='output.txt',
-                        help='Path of output/results file.')
+                        help='Path of output/results file. If only name is ' \
+                          'provided then local directory selected.')
     parser.add_argument('--K','-K',
                         dest='top_k',
                         type=int,
                         default=0,
                         help='Switch to return only top K IPs that were ' \
-                              + 'served. Default: 0 (all)')
+                              + 'served, per window. IPs are sorted from most '\
+                              + 'to least served (in bytes) Default: 0 ( '\
+                              + 'return all, not sorted)')
 
     args = parser.parse_args()
     log_in = args.input
     res_out = args.output
-    # create new filenames    
-    out_path = os.path.split(args.output)
-    tmp = out_path[1].split(".")
-
-    print(tmp)
-    tmp_text = tmp[0]+'-text.'+tmp[1]
-    tmp_json = tmp[0]+'-json.'+tmp[1]
-    res_out_text = os.path.join(out_path[0],tmp_text)
-    res_out_json = os.path.join(out_path[0],tmp_json)
-    print(res_out_text)
-    print(res_out_json)
     top_k = args.top_k
+
+    def sort_bytes(ip_cbyte,k=0):
+      # Ref: https://stackoverflow.com/questions/3121979/how-to-sort-list-tuple-of-lists-tuples
+      if k == 0:
+        top_k = ip_cbyte # not sorted
+      else:
+        top_k = sorted(ip_cbyte, key=lambda tup: tup[1], reverse=True)[:k]  
+      return top_k
 
     # Start Beam Pipeline
     p = beam.Pipeline(options=PipelineOptions())
@@ -76,11 +77,14 @@ def run():
                     | 'GetIpSize' >> beam.ParDo(ParseLogFn())
                     | 'Timestamp' >>  beam.ParDo(AddTimestampFn())
                     | 'Window' >> beam.WindowInto(window.FixedWindows(60*60,0))
-                    | 'GroupIps' >> beam.CombinePerKey(sum))
+                    | 'GroupIps' >> beam.CombinePerKey(sum)
+                    | 'CombineAsList' >> beam.CombineGlobally(
+                                              beam.combiners.ToListCombineFn()).without_defaults()
+                    | 'SortTopK' >> beam.Map(sort_bytes,top_k)
+                    | 'FormatOutput' >> beam.ParDo(FormatOutputFn()))
 
     # Write to output file as text     
-    output_text = ip_size_pcoll | 'FormatOutputText' >> beam.ParDo(FormatOutputFn(format='text'))
-    output_text | 'OutputText' >> beam.io.WriteToText(res_out_text)
+    ip_size_pcoll | beam.io.WriteToText(res_out)
 
     # Execute the Pipline
     result = p.run()
@@ -158,17 +162,23 @@ class AddTimestampFn(beam.DoFn):
     new_element = (element[0],element[1])
     yield beam.window.TimestampedValue(new_element, int(unix_ts))
 
-# Transform: format the output as 'IP : size'
+# Transform: format the output as string
 class FormatOutputFn(beam.DoFn):
-  def process(self,rawOutput,window=beam.DoFn.WindowParam,format="text"):
-    ts_format = '%H:%M:%S'
+  def process(self,rawOutputs,window=beam.DoFn.WindowParam):
+    # get window specs. and define output format
+    ts_format = '%d:%H:%M:%S'
     start = window.start.to_utc_datetime().strftime(ts_format)
     end = window.end.to_utc_datetime().strftime(ts_format)
-  
-    output = "%d byte(s) were served to %s in the hour period %s to %s" \
-              % (rawOutput[1],rawOutput[0],start,end)
-
-    return [output]
+    formatApply = "{:7d} byte(s) were served to {:s} in the hour " \
+                    "period {:s} to {:s}"
+    # loop through (presumably) sorted list
+    formattedOutput = []
+    for rawOutput in rawOutputs:
+      formattedOutput.append(formatApply.format(rawOutput[1],rawOutput[0],
+                                              start,end))
+    
+    logging.debug('FormatOutputFn() %s', formattedOutput)    
+    return formattedOutput
 
 if __name__ == '__main__':
   logging.getLogger().setLevel(logging.INFO)

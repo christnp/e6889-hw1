@@ -61,10 +61,12 @@ def run():
     result.wait_until_finish()
 
 # Transform: parse log, returning string IP and integer size
-# - Expected example format:
-#   |    IP/Server   | X |    Date/Time        | TZ?  | M  | Location | M |Size    
-#   |       0        |1|2|        3            |  4   | 5  |    6     | 7 |8(-1)   
-# - duckling.omsi.edu - - [04/Jul/1995:18:38:41 -0400] "GET /HTTP/1.0" 200 7074
+# Expected example format:
+# |  IP/Server  |  Date/Time |  M |   Location   |HTTP Ver.| M |Size |   
+# |       0     |      1     |  2 |       3      |    4    | 5 |6(-1)|   
+# -----------------------------------------------------------------------------
+# 141.243.1.172 [29:23:53:25] "GET /Software.html HTTP/1.0" 200 1497
+# -----------------------------------------------------------------------------
 class ParseLogFn(beam.DoFn):
   def process(self,element):
     element_uni = element.encode('utf-8')
@@ -89,9 +91,12 @@ class ParseLogFn(beam.DoFn):
 
 # Transform: format the output as 'IP : size'
 class FormatOutputFn(beam.DoFn):
-  def process(self,rawOutput):
-    # rawData is a list of strings/bytes
-    formattedOutput = "%s : %s " % (rawOutput[0],rawOutput[1])
+  def process(self,rawOutputs):
+    # define output format
+    formatApply = "{:7d} byte(s) were served to {:s}"
+    formattedOutput = formatApply.format(rawOutputs[1],rawOutputs[0])
+
+    logging.debug('FormatOutputFn() %s', formattedOutput)
     return [formattedOutput]
 
 if __name__ == '__main__':
