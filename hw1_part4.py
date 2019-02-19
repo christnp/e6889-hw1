@@ -6,10 +6,11 @@
 # 
 # Author:   Nick Christman, nc2677
 # Date:     2019/02/19
-# Program:  hw1_part3.py
+# Program:  hw1_part4.py
 # SDK(s):   Apache Beam
 
-'''This file extends hw1_part2.py by adding windowing functionality.
+'''This file extends adding sort/filter functionality. s the top-K IPs that were served 
+the most number of bytes 
 
  References:
  1. https://beam.apache.org/documentation/programming-guide/
