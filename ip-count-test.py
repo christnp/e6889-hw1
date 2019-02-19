@@ -18,8 +18,8 @@ def parse(element):
 
     return [(ip,size)]
 
-fname = "/home/christnp/Development/e6889/e6889-hw1/NASA_access_log_Jul95"
-#fname = "/home/christnp/Development/e6889/e6889-hw1/NASA_access_log_Jul95_test"
+#fname = "/home/christnp/Development/e6889/e6889-hw1/NASA_access_log_Jul95"
+fname = "/home/christnp/Development/e6889/e6889-hw1/NASA_access_log_Jul95_test"
 ip_size = []
 with open(fname) as f:
     content = f.readlines()
@@ -29,8 +29,12 @@ with open(fname) as f:
     #ip_size.append([ip,size])
 
 for line in content:
-    tmp = parse(line)
+    #tmp = parse(line)
+    tmp = line[len('['):-len(']')]
+    print('%s\n',tmp)
     ip_size.append(tmp)
+
+#print(ip_size)
 
 
 

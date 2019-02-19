@@ -23,6 +23,8 @@ import logging
 import sys
 import re
 from datetime import datetime
+import dateutil.parser as parser
+
 
 import apache_beam as beam
 from apache_beam import window
@@ -62,7 +64,7 @@ def run():
     ip_size_pcoll = (p | 'ReadAccessLog' >> beam.io.ReadFromText(log_in)
                     | 'GetIpSize' >> beam.ParDo(ParseLogFn())
                     | 'Timestamp' >>  beam.ParDo(AddTimestampFn())
-                    | 'Window' >> beam.WindowInto(window.FixedWindows(60*60))
+                    | 'Window' >> beam.WindowInto(window.FixedWindows(60*60,86390))
                     | 'GroupIps' >> beam.CombinePerKey(sum)   
                     | 'FormatOutput' >> beam.ParDo(FormatOutputFn()))
 
@@ -81,6 +83,22 @@ def run():
 # 141.243.1.172 [29:23:53:25] "GET /Software.html HTTP/1.0" 200 1497
 # -----------------------------------------------------------------------------
 class ParseLogFn(beam.DoFn):
+  # helper function to create datetime object from string
+  def __dt_check(self,dt_raw):    
+    # first, try to auto parse the date/time. If it fails, force a date/time
+    try:
+      dt_obj = parser.parse(dt_raw)
+      logging.debug('__dt_check() date/time : %s', dt_obj)      
+    except:
+      logging.debug('__dt_check() failed to parse date/time \"%s\"', dt_raw)
+      # Force date to be start of Unix Epoch (01/01/1970). Naively assume the 
+      # date time to be DD:HH:MM:SS and naively assume that the time is 
+      # HH:MM:SS at the end
+      dt_time =  dt_raw.split(":")[-3:]
+      dt_obj = datetime(1970, 1, 1,int(dt_time[0]),
+                      int(dt_time[1]),int(dt_time[2]))    
+    return dt_obj
+  # Main function
   def process(self,element):
     element_uni = element.encode('utf-8')
     try:
@@ -91,34 +109,37 @@ class ParseLogFn(beam.DoFn):
       logging.info('Failed to split line : [%s]', element_uni)
       return [("Failed Parse",1)]
     
+    # parse IP address
     ip = bytes(elements[0])
-    # we have to make sure size is an integer, else set to 0
+    
+    # parse size; set to 0 if non-integer
     try:
       size = int(elements[-1])
     except ValueError:
-      # Handle the exception
+      # Handle non-integer exception
       logging.debug('Size not an integer: [%s]', element_uni)
       size = 0
 
     # Part 3: extended to parse and convert time for unix time-stamp
-    dtz = elements[1].translate(None, '[]')
-    logging.debug('Date-time-zone : %s', dtz)
-    try:
-      unix_ts = datetime.strptime(dtz, "%d:%H:%M:%S").strftime('%s')
-    except ValueError:
-      unix_ts = str(0) # failed to get timestamp
-      logging.info('Unable to parse date-time from \"%s\"', element_uni)
-    
-    logging.info('(ip,size,timestamp) : (%s,%s,%s)', ip,str(size),str(unix_ts))
+    # parse date/time; strip out brackets (assumes [date/time] format)
+    dt_str_raw = elements[1].translate(None, '[]')
+    dt = self.__dt_check(dt_str_raw)
+    # compute the timestamp
+    unix_ts = (dt - datetime.utcfromtimestamp(0)).total_seconds()
+
+    logging.debug('Date-time: %s', dt)    
+    logging.debug('Timestamp: %s', unix_ts)
+
     return [(ip,size,unix_ts)]
 
 # Transform: adds timestamp to element
 # Ref: Beam Programming Guide
 class AddTimestampFn(beam.DoFn):
   def process(self, element):
-    timestamp = element[2]
+    unix_ts = element[2]
     new_element = (element[0],element[1])
-    yield beam.window.TimestampedValue(new_element, int(timestamp))
+    #logging.info('(ip,size),timestamp : (%s),%i',new_element,int(unix_ts))
+    yield beam.window.TimestampedValue(new_element, int(unix_ts))
 
 # Transform: format the output as 'IP : size'
 class FormatOutputFn(beam.DoFn):
