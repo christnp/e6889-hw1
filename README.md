@@ -1,6 +1,6 @@
 # ELEN-E6889 Homework 1
-## By:  Nick Christman
-## Due: 02.19.2018
+#### By:  Nick Christman
+#### Due: 02.19.2018
 
 ## Assumptions:
 1. Log file is saved in proper, UTF-8 encoding
