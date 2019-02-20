@@ -3,7 +3,8 @@
 *epa*
 *.txt*
 !epa-http.txt
-
+joelle.py
+sophie.py
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
